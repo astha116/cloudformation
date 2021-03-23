@@ -1,0 +1,704 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  This template deploys a VPC, with a pair of public and private subnets spread
+  across two Availability Zones. It deploys an internet gateway, with a default
+  route on the public subnets. It deploys a pair of NAT gateways (one in each
+  AZ), and default routes for them in the private subnets.
+Parameters:
+  DomainName:
+    Description: Domain name of website
+    Type: String
+    Default: juno-test.tk
+  AutoMinorVersionUpgrade:
+    Description: Allow Automatic Minor Version Upgrades?
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+  AllocatedStorage:
+    Default: '5'
+    Description: The size of the database (Gb)
+    Type: Number
+    MinValue: '5'
+    MaxValue: '6144'
+    ConstraintDescription: Must be between 5-6144
+  PreferredBackupWindow:
+    Description: Enter Preferred Backup Window Time (UTC).
+    Type: String
+    Default: '17:00-19:00'
+  PreferredMaintenanceWindow:
+    Description: Enter Preferred Maintenance Window Time (UTC).
+    Type: String
+    Default: 'Sun:19:00-Sun:23:00'
+  EC2InstanceType:
+    Description: WebServer EC2 instance type
+    Type: String
+    Default: t2.small
+    AllowedValues:
+      - t1.micro
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - m1.small
+      - m1.medium
+      - m1.large
+      - m1.xlarge
+      - m2.xlarge
+      - m2.2xlarge
+      - m2.4xlarge
+      - m3.medium
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - c1.medium
+      - c1.xlarge
+      - c3.large
+      - c3.xlarge
+      - c3.2xlarge
+      - c3.4xlarge
+      - c3.8xlarge
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+      - g2.2xlarge
+      - g2.8xlarge
+      - r3.large
+      - r3.xlarge
+      - r3.2xlarge
+      - r3.4xlarge
+      - r3.8xlarge
+      - i2.xlarge
+      - i2.2xlarge
+      - i2.4xlarge
+      - i2.8xlarge
+      - d2.xlarge
+      - d2.2xlarge
+      - d2.4xlarge
+      - d2.8xlarge
+      - hi1.4xlarge
+      - hs1.8xlarge
+      - cr1.8xlarge
+      - cc2.8xlarge
+      - cg1.4xlarge
+    ConstraintDescription: must be a valid EC2 instance type.
+  InstanceType:
+    Description: Select Instance Type.
+    Type: String
+    Default: db.t2.small
+    AllowedValues:
+      - db.t1.micro
+      - db.t2.micro
+      - db.t2.small
+      - db.t2.medium
+      - db.t2.large
+      - db.m1.small
+      - db.m1.medium
+      - db.m1.large
+      - db.m1.xlarge
+      - db.m3.medium
+      - db.m3.large
+      - db.m3.xlarge
+      - db.m3.2xlarge
+      - db.m4.large
+      - db.m4.xlarge
+      - db.m4.2xlarge
+      - db.m4.4xlarge
+      - db.m4.10xlarge
+      - db.r3.large
+      - db.r3.xlarge
+      - db.r3.2xlarge
+      - db.r3.4xlarge
+      - db.r3.8xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+  MasterUsername:
+    Description: >-
+      Database administration name. First character must be a letter and can not
+      be 'root'.
+    Type: String
+    Default: rdsroot
+  MasterUserPassword:
+    NoEcho: 'true'
+    Description: >-
+      Database administration password. Minimum of 8 alphanumeric characters
+      (pattern of [a-zA-Z0-9]).
+    Type: String
+    MinLength: '8'
+    AllowedPattern: '[a-zA-Z0-9!?]*'
+    ConstraintDescription: Must only contain upper and lowercase letters and numbers
+  BackupRetentionPeriod:
+    Description: Enter Backup Retention Period in Days.
+    Type: Number
+    Default: '7'
+#   MultiAvailabilityZone:
+#     Description: Enable Multi Availability Zones?
+#     Type: String
+#     Default: 'false'
+#     AllowedValues:
+#       - 'true'
+#       - 'false'
+  TcpPort:
+    Description: Enter RDS Listening TCP Port number.
+    Type: Number
+    Default: '3306'
+  # myLaunchTemplateVersionNumber:
+  #   Type: String
+  SSHKeyName:
+    Description: Name of the ec2 key you need one to use this template
+    Type: 'AWS::EC2::KeyPair::KeyName'
+    Default: choose-key
+  LatestAmiId:
+    Description: Region specific image from the Parameter Store
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+  Subnets:
+    Type: CommaDelimitedList
+  EnvironmentName:
+    Description: An environment name that is prefixed to resource names
+    Type: String
+  VpcCIDR:
+    Description: Please enter the IP range (CIDR notation) for this VPC
+    Type: String
+    Default: 10.192.0.0/16
+  PublicSubnet1CIDR:
+    Description: >-
+      Please enter the IP range (CIDR notation) for the public subnet in the
+      first Availability Zone
+    Type: String
+    Default: 10.192.10.0/24
+  PublicSubnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the public subnet in the second Availability Zone
+    Type: String
+    Default: 10.192.11.0/24
+  PrivateSubnet1CIDR:
+    Description: >-
+      Please enter the IP range (CIDR notation) for the private subnet in the
+      first Availability Zone
+    Type: String
+    Default: 10.192.20.0/24
+  PrivateSubnet2CIDR:
+    Description: >-
+      Please enter the IP range (CIDR notation) for the private subnet in the
+      second Availability Zone
+    Type: String
+    Default: 10.192.21.0/24
+Mappings:
+  Settings:
+    MySQL:
+      Engine: MySQL
+      Version: '5.7'
+  RegionToAmazonAMI:
+    us-east-1:
+      HVM64: ami-09479453c5cde9639
+    us-east-2:
+      HVM64: ami-023c8dbf8268fb3ca
+    us-west-1:
+      HVM64: ami-06ff511fea5db2c99
+    us-west-2:
+      HVM64: ami-0bb5806b2e825a199
+  NetworkToSubnet:
+    10.0.0.0:
+      PubSubnetZoneA: 10.0.10.0/24
+      PrivSubnetZoneA: 10.0.20.0/24
+      PrivSubnetZoneB: 10.0.40.0/24
+Resources:
+  VPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 0a6a2cc4-3bdd-41b5-b9b9-84e5259ec4c1
+  InternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: f4c60946-96d0-4f77-a7c9-d8646bc767a0
+  InternetGatewayAttachment:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: e9dc66c8-f7a2-440b-a11c-4080dcdeef2d
+  PublicSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select 
+        - 0
+        - !GetAZs ''
+      CidrBlock: !Ref PublicSubnet1CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName} Public Subnet (AZ1)'
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 403507fd-d8ad-4ce4-8a1a-9ad849ac5c72
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs  '' ]
+      CidrBlock: !Ref PublicSubnet2CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Public Subnet (AZ2)
+  PrivateSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select 
+        - 0
+        - !GetAZs ''
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName} Private Subnet (AZ1)'
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 562ddfca-a4ed-4878-aa32-af19f79fe2c9
+  PrivateSubnet2:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select 
+        - 1
+        - !GetAZs ''
+      CidrBlock: !Ref PrivateSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName} Private Subnet (AZ2)'
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 3e36a3b2-8e24-4e9c-a810-3dc74b36bd36
+  NatGateway1EIP:
+    Type: 'AWS::EC2::EIP'
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: eaf12eee-6442-4158-8da4-50b626e1bd45
+  NatGateway2EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+  NatGateway1:
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      AllocationId: !GetAtt NatGateway1EIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: d35d0498-bea5-496d-ac1a-c6a9456a9f48
+  NatGateway2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway2EIP.AllocationId
+      SubnetId: !Ref PublicSubnet2
+  PublicRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName} Public Routes'
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: f607be99-dcbe-4e2a-a46d-a5e2892c6031
+  DefaultPublicRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 26619c8a-2eb5-4ba5-ab6e-468512b16c1d
+  PublicSubnet1RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: e3287371-8e35-41b9-84e5-6aafb392d986
+  PublicSubnet2RouteTableAssociation: 
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+  PrivateRouteTable1:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName} Private Routes (AZ1)'
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 7f8a467a-c3ac-49c1-ba86-e96a5f0aa7d4
+  DefaultPrivateRoute1:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: f94f341b-deca-4f97-b226-8c278ae0f657
+  PrivateSubnet1RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet1
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 6c698be5-f3a8-4f08-855e-d4f87ce4b1ee
+  PrivateRouteTable2:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName} Private Routes (AZ2)'
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 822277dc-94f1-4818-9867-fc6ee928f5dc
+  DefaultPrivateRoute2:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: a17e1941-d1c5-4b22-9bc8-7a1e002ce26c
+  PrivateSubnet2RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      SubnetId: !Ref PrivateSubnet2
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 1ca82a51-a316-4d90-a440-f8977b29a868
+  myLaunchTemplate:
+    Type: 'AWS::EC2::LaunchTemplate'
+    Properties:
+      LaunchTemplateData:
+        CreditSpecification:
+          CpuCredits: unlimited
+        ImageId: !Ref LatestAmiId
+        InstanceType: !Ref EC2InstanceType
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 3bc0668a-839f-4a9e-9394-0b5e3b6c07aa
+  myASG:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Properties:
+      MinSize: '0'
+      MaxSize: '1'
+      DesiredCapacity: '1'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref myLaunchTemplate
+        Version: !GetAtt myLaunchTemplate.LatestVersionNumber
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1
+      TargetGroupARNs:
+        - !Ref EC2TargetGroup
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: e685cee6-d891-4e1c-a3ba-f3b818df5928
+  EC2SecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: SSH and Port 80
+      VpcId:
+        Ref: VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId:
+            Ref: ELBSecurityGroup
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: bc1b5efd-161f-4f37-89e3-ae98f81a53dd
+  ELBSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: SSH and Port 80
+      VpcId:
+        Ref: VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 2345e39d-e54a-4304-b8c6-d22fced83cdd
+  AmazonLinuxInstance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      ImageId:
+        'Fn::FindInMap':
+          - RegionToAmazonAMI
+          - Ref: 'AWS::Region'
+          - HVM64
+      InstanceInitiatedShutdownBehavior: stop
+      InstanceType: !Ref EC2InstanceType
+      KeyName:
+        Ref: SSHKeyName
+      Monitoring: 'true'
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: 'true'
+          DeviceIndex: '0'
+          GroupSet:
+            - !Ref EC2SecurityGroup
+          SubnetId: !Ref PrivateSubnet1
+      Tenancy: default
+      UserData:
+        'Fn::Base64': !Sub |
+          #!/bin/bash -xe
+          cd /tmp
+          yum update -y
+          yum install -y httpd24
+          echo "Healthy" > /var/www/html/index.html
+          service httpd start
+          /opt/aws/bin/cfn-signal \
+            -e $? \
+            --stack ${AWS::StackName} \
+            --resource AmazonLinuxInstance \
+            --region ${AWS::Region}
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: ce5172fd-95d4-4f33-b7a2-99a3d7bd3cf4
+  EC2TargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 15
+      HealthyThresholdCount: 5
+      Matcher:
+        HttpCode: '200'
+      Name: EC2TargetGroup
+      Port: 80
+      Protocol: HTTP
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '20'
+      Targets:
+        - Id:
+            Ref: AmazonLinuxInstance
+          Port: 80
+      UnhealthyThresholdCount: 3
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: EC2TargetGroup
+        - Key: Port
+          Value: 80
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: ff6d8814-81b8-4eaf-af88-1060542fc25d
+  ALBListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn:
+            Ref: EC2TargetGroup
+      LoadBalancerArn:
+        Ref: ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: fe24c3e4-73f6-498f-807d-1378fb77f030
+  ApplicationLoadBalancer:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Scheme: internet-facing
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ELBSecurityGroup
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: f0e3b8af-36fd-4ce0-a088-6509b0677f62
+  RDSAccessSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Instance to RDS Access
+      VpcId:
+        Ref: VPC
+      Tags:
+        - Key: Name
+          Value:
+            'Fn::Join':
+              - ''
+              - - Ref: 'AWS::StackName'
+                - '-rds'
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 694a14a7-6139-4a0b-9824-5582e918804f
+  AccessSecurityGroupIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: RDSAccessSecurityGroup
+    Properties:
+      GroupId:
+        Ref: RDSAccessSecurityGroup
+      IpProtocol: tcp
+      FromPort:
+        Ref: TcpPort
+      ToPort:
+        Ref: TcpPort
+      SourceSecurityGroupId:
+        Ref: RDSAccessSecurityGroup
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 81e007e5-5d66-4212-9d3c-28f497188b52
+  DbSubnetGroup:
+    Type: 'AWS::RDS::DBSubnetGroup'
+    Properties:
+      DBSubnetGroupDescription:
+        'Fn::Join':
+          - ''
+          - - 'RDS Subnet Group for '
+            - Ref: 'AWS::StackName'
+      SubnetIds:
+        - Ref: PrivateSubnet2
+        - Ref: PrivateSubnet1
+      Tags:
+        - Key: Name
+          Value:
+            Ref: 'AWS::StackName'
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: e8c83955-f738-43b5-a5d9-847c48f19e5a
+  MyDB:
+    Type: 'AWS::RDS::DBInstance'
+    DependsOn:
+      - RDSAccessSecurityGroup
+      - DbSubnetGroup
+    Properties:
+      AllocatedStorage:
+        Ref: AllocatedStorage
+      DBInstanceClass:
+        Ref: InstanceType
+      Engine:
+        'Fn::FindInMap':
+          - Settings
+          - MySQL
+          - Engine
+      EngineVersion:
+        'Fn::FindInMap':
+          - Settings
+          - MySQL
+          - Version
+      MasterUsername:
+        Ref: MasterUsername
+      MasterUserPassword:
+        Ref: MasterUserPassword
+      Port:
+        Ref: TcpPort
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      DBParameterGroupName: !Ref MyRDSParamGroup
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 99dddeda-7da7-443f-90fc-f088978fad59
+  MyRDSParamGroup:
+    Type: 'AWS::RDS::DBParameterGroup'
+    Properties:
+      Family: MySQL5.7
+      Description: CloudFormation Sample Database Parameter Group
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 33e80d8b-fce1-4528-8a6d-54aae62ec8b2
+  DNS:
+    Type: 'AWS::Route53::HostedZone'
+    DeletionPolicy: Retain
+    Properties:
+      HostedZoneConfig:
+        Comment: hosted subdomain
+      Name: !Sub '${DomainName}.'
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: de2a39b9-2055-4efb-9b53-9771157e18ff
+  myDNS:
+    Type: 'AWS::Route53::RecordSetGroup'
+    Properties:
+      HostedZoneId: !Ref DNS
+      Comment: Zone apex alias targeted to myELB LoadBalancer.
+      RecordSets:
+        - Name: juno-test.tk.
+          Type: A
+          AliasTarget:
+            HostedZoneId: !GetAtt ApplicationLoadBalancer.CanonicalHostedZoneID
+            DNSName: !GetAtt ApplicationLoadBalancer.DNSName
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 9214f96b-02ce-482e-a309-0af5d16f8217
+
+Outputs:
+  DbSubnetGroup:
+    Description: DB Subnet Group Created.
+    Value:
+      Ref: DbSubnetGroup
+  VPC:
+    Description: A reference to the created VPC
+    Value: !Ref VPC
+  PublicSubnets:
+    Description: A list of the public subnets
+    Value: !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2 ]]
+
+  PrivateSubnets:
+    Description: A list of the private subnets
+    Value: !Join 
+      - ','
+      - - !Ref PrivateSubnet1
+  PublicSubnet1:
+    Description: A reference to the public subnet in the 1st Availability Zone
+    Value: !Ref PublicSubnet1
+  PublicSubnet2:
+    Description: A reference to the public subnet in the 2nd Availability Zone
+    Value: !Ref PublicSubnet2
+  PrivateSubnet1:
+    Description: A reference to the private subnet in the 1st Availability Zone
+    Value: !Ref PrivateSubnet1
+  PrivateSubnet2:
+    Description: A reference to the private subnet in the 2nd Availability Zone
+    Value: !Ref PrivateSubnet2
