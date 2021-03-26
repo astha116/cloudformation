@@ -412,6 +412,20 @@ Resources:
     Type: 'AWS::EC2::LaunchTemplate'
     Properties:
       LaunchTemplateData:
+        KeyName: !Ref SSHKeyName
+        UserData:
+          Fn::Base64:
+            Fn::Sub: |
+              #!/bin/bash -xe
+              # Add EPEL repository
+              yum install epel-release
+              # Install Nginx
+              yum install nginx
+              # Enable and start service
+              systemctl enable nginx
+              systemctl start nginx
+        SecurityGroupIds:
+         - !Ref EC2SecurityGroup
         CreditSpecification:
           CpuCredits: unlimited
         ImageId: !Ref LatestAmiId
@@ -421,6 +435,7 @@ Resources:
         id: 3bc0668a-839f-4a9e-9394-0b5e3b6c07aa
   myASG:
     Type: 'AWS::AutoScaling::AutoScalingGroup'
+    DependsOn: MyDB
     Properties:
       MinSize: '0'
       MaxSize: '1'
@@ -468,42 +483,42 @@ Resources:
     Metadata:
       'AWS::CloudFormation::Designer':
         id: 2345e39d-e54a-4304-b8c6-d22fced83cdd
-  AmazonLinuxInstance:
-    Type: 'AWS::EC2::Instance'
-    Properties:
-      ImageId:
-        'Fn::FindInMap':
-          - RegionToAmazonAMI
-          - Ref: 'AWS::Region'
-          - HVM64
-      InstanceInitiatedShutdownBehavior: stop
-      InstanceType: !Ref EC2InstanceType
-      KeyName:
-        Ref: SSHKeyName
-      Monitoring: 'true'
-      NetworkInterfaces:
-        - AssociatePublicIpAddress: 'true'
-          DeviceIndex: '0'
-          GroupSet:
-            - !Ref EC2SecurityGroup
-          SubnetId: !Ref PrivateSubnet1
-      Tenancy: default
-      UserData:
-        'Fn::Base64': !Sub |
-          #!/bin/bash -xe
-          cd /tmp
-          yum update -y
-          yum install -y httpd24
-          echo "Healthy" > /var/www/html/index.html
-          service httpd start
-          /opt/aws/bin/cfn-signal \
-            -e $? \
-            --stack ${AWS::StackName} \
-            --resource AmazonLinuxInstance \
-            --region ${AWS::Region}
-    Metadata:
-      'AWS::CloudFormation::Designer':
-        id: ce5172fd-95d4-4f33-b7a2-99a3d7bd3cf4
+  # AmazonLinuxInstance:
+  #   Type: 'AWS::EC2::Instance'
+  #   Properties:
+  #     ImageId:
+  #       'Fn::FindInMap':
+  #         - RegionToAmazonAMI
+  #         - Ref: 'AWS::Region'
+  #         - HVM64
+  #     InstanceInitiatedShutdownBehavior: stop
+  #     InstanceType: !Ref EC2InstanceType
+  #     KeyName:
+  #       Ref: "SSHKeyName"
+  #     Monitoring: 'true'
+  #     NetworkInterfaces:
+  #       - AssociatePublicIpAddress: 'true'
+  #         DeviceIndex: '0'
+  #         GroupSet:
+  #           - !Ref EC2SecurityGroup
+  #         SubnetId: !Ref PrivateSubnet1
+  #     Tenancy: default
+  #     UserData:
+  #       'Fn::Base64': !Sub |
+  #         #!/bin/bash -xe
+  #         cd /tmp
+  #         yum update -y
+  #         yum install -y httpd24
+  #         echo "Healthy" > /var/www/html/index.html
+  #         service httpd start
+  #         /opt/aws/bin/cfn-signal \
+  #           -e $? \
+  #           --stack ${AWS::StackName} \
+  #           --resource AmazonLinuxInstance \
+  #           --region ${AWS::Region}
+  #   Metadata:
+  #     'AWS::CloudFormation::Designer':
+  #       id: ce5172fd-95d4-4f33-b7a2-99a3d7bd3cf4
   EC2TargetGroup:
     Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
     Properties:
@@ -518,12 +533,12 @@ Resources:
       Protocol: HTTP
       TargetGroupAttributes:
         - Key: deregistration_delay.timeout_seconds
-          Value: '20'
-      Targets:
-        - Id:
-            Ref: AmazonLinuxInstance
-          Port: 80
-      UnhealthyThresholdCount: 3
+          Value: '5'
+      # Targets:
+      #   - Id:
+      #       Ref: AmazonLinuxInstance
+      #     Port: 80
+      UnhealthyThresholdCount: 5
       VpcId: !Ref VPC
       Tags:
         - Key: Name
